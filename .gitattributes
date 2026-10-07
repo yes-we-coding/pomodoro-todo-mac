@@ -1,0 +1,15 @@
+# 强制这些文件使用 LF（macOS 上 CRLF 会导致脚本/Swift 编译出错）
+*.sh    text eol=lf
+*.swift text eol=lf
+*.plist text eol=lf
+*.entitlements text eol=lf
+Package.swift text eol=lf
+*.webmanifest text eol=lf
+*.js    text eol=lf
+*.json  text eol=lf
+*.html  text eol=lf
+
+# 二进制资源不转换
+*.png   binary
+*.ico   binary
+*.icns  binary

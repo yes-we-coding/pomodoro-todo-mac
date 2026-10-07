@@ -1,0 +1,12 @@
+# Swift Package Manager
+.build/
+.swiftpm/
+Package.resolved
+
+# 构建产物
+dist/
+*.app
+
+# macOS / 系统
+.DS_Store
+*.swp

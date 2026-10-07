@@ -294,7 +294,7 @@ struct PomodoroTodoApp: App {
 
     var body: some Scene {
         MenuBarExtra {
-            RootView(holder: appDelegate.holder!)
+            MenuBarContent(delegate: appDelegate)
         } label: {
             Text("🍅")
         }
@@ -302,21 +302,32 @@ struct PomodoroTodoApp: App {
     }
 }
 
-final class AppDelegate: NSObject, NSApplicationDelegate {
-    var holder: WebHolder?
+/// 显式订阅 AppDelegate，holder 创建后自动刷新菜单栏弹窗
+private struct MenuBarContent: View {
+    @ObservedObject var delegate: AppDelegate
+
+    var body: some View {
+        if let holder = delegate.holder {
+            RootView(holder: holder)
+        } else {
+            ProgressView()
+                .frame(width: 120, height: 80)
+        }
+    }
+}
+
+final class AppDelegate: NSObject, ObservableObject, NSApplicationDelegate {
+    @Published var holder: WebHolder?
     private var server: LocalHTTPServer?
 
-    func applicationDidFinishLaunching(_ notification: Notification) {
-        // 菜单栏 App：不显示 Dock 图标（对应 Info.plist 的 LSUIElement）
-        NSApp.setActivationPolicy(.accessory)
-
-        // 资源目录：.app 里为 Contents/Resources/WebRoot；
-        // 若找不到则回退到源码仓库的 WebRoot（便于本地 swift run 调试）。
+    override init() {
+        super.init()
+        // 提前到 init：MenuBarExtra 内容可能在 willFinishLaunching 阶段就首次求值
         let resourceURL: URL
         if let bundled = Bundle.main.resourceURL?.appendingPathComponent("WebRoot"),
            FileManager.default.fileExists(atPath: bundled.path) {
             resourceURL = bundled
-        } else if let top = findSourceWebRoot() {
+        } else if let top = Self.findSourceWebRoot() {
             resourceURL = top
         } else {
             fatalError("找不到 WebRoot 资源目录")
@@ -326,13 +337,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let port = server.start()
         self.server = server
         self.holder = WebHolder(port: port)
+    }
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        // 菜单栏 App：不显示 Dock 图标（对应 Info.plist 的 LSUIElement）
+        NSApp.setActivationPolicy(.accessory)
 
         // 请求系统通知授权（番茄 / 休息结束弹窗）
         NotificationManager.shared.requestAuthorization()
     }
 
     /// 向上逐级查找包含 index.html 的 WebRoot 目录（调试用）。
-    private func findSourceWebRoot() -> URL? {
+    private static func findSourceWebRoot() -> URL? {
         var dir = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
         for _ in 0..<6 {
             let candidate = dir.appendingPathComponent("WebRoot")

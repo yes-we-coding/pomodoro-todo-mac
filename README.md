@@ -12,6 +12,7 @@
 
 - **菜单栏常驻**：顶部状态栏一个 🍅，点开即用，不占 Dock
 - **弹窗关闭也持续计时**：WKWebView 常驻内存，番茄结束照常响铃
+- **系统原生通知**：番茄 / 休息结束弹出 macOS 通知（首次启动会请求授权）
 - **数据持久化**：内置本地回环 HTTP 服务（纯 `Network.framework`），`localStorage` 可靠保存
 - **离线可用**：前端资源全部打包进 App
 - **完整功能**：番茄钟、待办、标签、重复任务、热力图、高效时段、中断统计、智能总结等
@@ -80,11 +81,11 @@ pomodoro-todo-mac
 | 后台计时 | WKWebView 由 `AppDelegate` 强持有，弹窗关闭不销毁 |
 | 本地服务器 | 基于 `Network.framework`（NWListener），无第三方依赖 |
 | 提示音 | Web Audio（已配置允许自动播放） |
+| 系统通知 | `UNUserNotificationCenter`；前端经 `WKScriptMessageHandler`（`nativeNotify`）触发 |
 
 ## ⚠️ 已知限制（相对 Windows 版）
 
 - 无原生系统级窗口控制（置顶、无边框、迷你窗口）
-- 提醒以**响铃 + 菜单图标**为主；如需系统通知，可后续接入 `UNUserNotificationCenter`
 - 自签名 App 默认不公证，首次需手动允许
 
 ## 📄 License

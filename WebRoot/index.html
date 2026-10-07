@@ -1643,6 +1643,14 @@
   }
 
   // 达成每日目标的庆祝音效（上行琶音）
+  // 原生通知桥：macOS 壳注入了 webkit.messageHandlers.nativeNotify；
+  // 网页版无此对象，调用静默忽略，不影响逻辑。
+  function nativeNotify(title, body){
+    try{
+      const h = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.nativeNotify;
+      if(h) h.postMessage(JSON.stringify({title:String(title||''), body:String(body||'')}));
+    }catch(e){}
+  }
   let celebrateTimer = null;
   function playCelebrate(task){
     const mask = $('#celebrateMask'); if(!mask) return;
@@ -1651,6 +1659,8 @@
     $('#celEmoji').textContent = isGoal ? '🏆' : '🎉';
     $('#celText').textContent = isGoal ? '今日目标达成！' : '番茄完成 +1';
     $('#celSub').textContent = (task ? task.text : '') + ' · 今日 ' + todayPomos() + '/' + Math.max(1,+state.settings.dailyGoal||8);
+
+    // 注：原生系统通知统一在 raiseAlarm 中处理（专注 / 休息结束 / 目标达成）
 
     // 撒花
     const box = $('#confetti'); box.innerHTML='';
@@ -1696,13 +1706,19 @@
     // 标题加标记，供托盘程序检测并强制弹出窗口
     document.title = ALARM_MARK + (isFocusEnd ? '专注完成' : '休息结束') + ' · 番茄待办';
 
-    // 常驻通知
+    // 常驻通知（网页 Notification）
     if('Notification' in window && Notification.permission === 'granted'){
       try{ new Notification(isFocusEnd ? '专注完成 🍅' : '休息结束 💪', {
         body:(isFocusEnd ? '该休息了' : '该专注了') + (task ? '：' + task.text : ''),
         requireInteraction:true, tag:'pomodoro-alarm'
       }); }catch(e){}
     }
+
+    // macOS 原生系统通知（专注 / 休息结束统一在此）
+    nativeNotify(isFocusEnd ? (todayPomos() === Math.max(1,+state.settings.dailyGoal||8) ? '🏆 今日目标达成！' : '🍅 专注完成') : '💪 休息结束',
+      isFocusEnd
+        ? (nextMode === 'long' ? '该长休息了' : '该休息了') + (task ? '：' + task.text : '')
+        : '该专注了，点击菜单栏 🍅 开始');
 
     if(alarmGoTimer){ clearInterval(alarmGoTimer); alarmGoTimer = null; }
     // G: 长休结束 -> 上扬音；普通提醒 -> 常规提示音

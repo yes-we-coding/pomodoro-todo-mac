@@ -1,5 +1,6 @@
 import SwiftUI
 import WebKit
+import UserNotifications
 
 // MARK: - 本地 HTTP 服务器（纯 Network.framework，无第三方依赖）
 // 把内置 WebRoot 通过 http://127.0.0.1:<随机端口> 提供给 WKWebView，
@@ -82,9 +83,6 @@ final class LocalHTTPServer {
     }
 
     private func send(_ data: Data, on conn: NWConnection) {
-        conn.contentProcessed { _ in
-            conn.cancel()
-        }
         conn.send(content: data, completion: .contentProcessed { _ in
             conn.cancel()
         })
@@ -157,9 +155,43 @@ final class LocalHTTPServer {
     }
 }
 
+// MARK: - 系统原生通知
+
+final class NotificationManager: NSObject {
+    static let shared = NotificationManager()
+
+    /// 请求授权（可在 App 启动时调用）。
+    func requestAuthorization() {
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
+    }
+
+    func notify(title: String, body: String) {
+        let center = UNUserNotificationCenter.current()
+        center.getNotificationSettings { settings in
+            // 若未决定授权，先请求；已拒绝则静默跳过（响铃仍由前端负责）
+            if settings.authorizationStatus == .notDetermined {
+                center.requestAuthorization(options: [.alert, .sound]) { granted, _ in
+                    if granted { self.deliver(title: title, body: body) }
+                }
+            } else if settings.authorizationStatus == .authorized || settings.authorizationStatus == .provisional {
+                self.deliver(title: title, body: body)
+            }
+        }
+    }
+
+    private func deliver(title: String, body: String) {
+        let content = UNMutableNotificationContent()
+        content.title = title
+        content.body = body
+        content.sound = nil  // 提示音由前端 Web Audio 负责，避免重复
+        let req = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
+        UNUserNotificationCenter.current().add(req, withCompletionHandler: nil)
+    }
+}
+
 // MARK: - 常驻 WebView 持有者（即使弹窗关闭也保持计时与 Web Audio）
 
-final class WebHolder: NSObject, WKUIDelegate, WKNavigationDelegate {
+final class WebHolder: NSObject, WKUIDelegate, WKNavigationDelegate, WKScriptMessageHandler {
     let webView: WKWebView
     private(set) var baseURL: URL
 
@@ -178,6 +210,8 @@ final class WebHolder: NSObject, WKUIDelegate, WKNavigationDelegate {
         self.webView = wv
         self.baseURL = URL(string: "http://127.0.0.1:\(port)/index.html")!
         super.init()
+        // JS -> 原生 消息桥：window.webkit.messageHandlers.nativeNotify
+        wv.configuration.userContentController.add(self, name: "nativeNotify")
         wv.uiDelegate = self
         wv.navigationDelegate = self
         wv.load(URLRequest(url: baseURL))
@@ -185,6 +219,23 @@ final class WebHolder: NSObject, WKUIDelegate, WKNavigationDelegate {
 
     func reload() {
         webView.load(URLRequest(url: baseURL))
+    }
+
+    // 接收前端发来的通知请求
+    func userContentController(_ userContentController: WKUserContentController,
+                               didReceive message: WKScriptMessage) {
+        guard message.name == "nativeNotify" else { return }
+        var title = "番茄待办"
+        var body = ""
+        if let str = message.body as? String,
+           let data = str.data(using: .utf8),
+           let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            if let t = obj["title"] as? String, !t.isEmpty { title = t }
+            body = obj["body"] as? String ?? ""
+        } else if let str = message.body as? String {
+            body = str
+        }
+        NotificationManager.shared.notify(title: title, body: body)
     }
 
     // 允许 window.open / target=_blank 在同一视图打开
@@ -275,6 +326,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let port = server.start()
         self.server = server
         self.holder = WebHolder(port: port)
+
+        // 请求系统通知授权（番茄 / 休息结束弹窗）
+        NotificationManager.shared.requestAuthorization()
     }
 
     /// 向上逐级查找包含 index.html 的 WebRoot 目录（调试用）。
